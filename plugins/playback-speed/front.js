@@ -30,7 +30,7 @@ const observePopupContainer = () => {
 			menu = getSongMenu();
 		}
 
-		if (menu && !menu.contains(slider)) {
+		if (menu && menu.lastElementChild.lastElementChild.innerText.startsWith('Stats') && !menu.contains(slider)) {
 			menu.prepend(slider);
 			if (!observingSlider) {
 				setupSliderListener();
@@ -85,7 +85,7 @@ function forcePlaybackRate(e) {
 }
 
 module.exports = () => {
-	document.addEventListener('apiLoaded', e => {
+	document.addEventListener('apiLoaded', () => {
 		observePopupContainer();
 		observeVideo();
 		setupWheelListener();

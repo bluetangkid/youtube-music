@@ -1,6 +1,8 @@
 const { ElementFromFile, templatePath } = require("../utils");
 
-const { setOptions } = require("../../config/plugins");
+const { setOptions, isEnabled } = require("../../config/plugins");
+
+const moveVolumeHud = isEnabled("precise-volume") ? require("../precise-volume/front").moveVolumeHud : ()=>{};
 
 function $(selector) { return document.querySelector(selector); }
 
@@ -12,9 +14,24 @@ const switchButtonDiv = ElementFromFile(
 
 module.exports = (_options) => {
     if (_options.forceHide) return;
-    options = _options;
-    document.addEventListener('apiLoaded', setup, { once: true, passive: true });
-}
+    switch (_options.mode) {
+        case "native": {
+            $("ytmusic-player-page").setAttribute("has-av-switcher");
+            $("ytmusic-player").setAttribute("has-av-switcher");
+            return;
+        }
+        case "disabled": {
+            $("ytmusic-player-page").removeAttribute("has-av-switcher");
+            $("ytmusic-player").removeAttribute("has-av-switcher");
+            return;
+        }
+        default:
+        case "custom": {
+            options = _options;
+            document.addEventListener("apiLoaded", setup, { once: true, passive: true });
+        }
+    }
+};
 
 function setup(e) {
     api = e.detail;
@@ -22,8 +39,6 @@ function setup(e) {
     video = $('video');
 
     $('ytmusic-player-page').prepend(switchButtonDiv);
-
-    $('#song-image.ytmusic-player').style.display = "block";
 
     if (options.hideVideo) {
         $('.video-switch-button-checkbox').checked = false;
@@ -39,7 +54,7 @@ function setup(e) {
         changeDisplay(e.target.checked);
         setOptions("video-toggle", options);
     })
-  
+
     video.addEventListener('srcChanged', videoStarted);
 
     observeThumbnail();
@@ -48,7 +63,10 @@ function setup(e) {
 function changeDisplay(showVideo) {
     player.style.margin = showVideo ? '' : 'auto 0px';
     player.setAttribute('playback-mode', showVideo ? 'OMV_PREFERRED' : 'ATV_PREFERRED');
-    $('#song-video.ytmusic-player').style.display = showVideo ? 'unset' : 'none';
+
+    $('#song-video.ytmusic-player').style.display = showVideo ? 'block' : 'none';
+    $('#song-image').style.display = showVideo ? 'none' : 'block';
+
     if (showVideo && !video.style.top) {
         video.style.top = `${(player.clientHeight - video.clientHeight) / 2}px`;
     }
@@ -87,13 +105,6 @@ function forcePlaybackMode() {
         });
     });
     playbackModeObserver.observe(player, { attributeFilter: ["playback-mode"] });
-}
-
-// if precise volume plugin is enabled, move its hud to be on top of the video
-function moveVolumeHud(showVideo) {
-    const volumeHud = $('#volumeHud');
-    if (volumeHud)
-        volumeHud.style.top = showVideo ? `${(player.clientHeight - video.clientHeight) / 2}px` : 0;
 }
 
 function observeThumbnail() {

@@ -1,21 +1,35 @@
 const { ipcRenderer } = require("electron");
-const { Menu } = require("@electron/remote");
-
-
-const customTitlebar = require("custom-electron-titlebar");
+const config = require("../../config");
+const { Titlebar, Color } = require("custom-electron-titlebar");
 function $(selector) { return document.querySelector(selector); }
 
-module.exports = () => {
-	const bar = new customTitlebar.Titlebar({
-		backgroundColor: customTitlebar.Color.fromHex("#050505"),
-		itemBackgroundColor: customTitlebar.Color.fromHex("#121212"),
+module.exports = (options) => {
+	let visible = !config.get("options.hideMenu");
+	const bar = new Titlebar({
+		backgroundColor: Color.fromHex("#050505"),
+		itemBackgroundColor: Color.fromHex("#1d1d1d"),
+		svgColor: Color.WHITE,
+		menu: visible ? undefined : null
 	});
 	bar.updateTitle(" ");
 	document.title = "Youtube Music";
 
-	ipcRenderer.on("updateMenu", function (_event, showMenu) {
-		bar.updateMenu(showMenu ? Menu.getApplicationMenu() : null);
+	const hideIcon = hide => $('.cet-window-icon').style.display = hide ? 'none' : 'flex';
+
+	if (options.hideIcon) hideIcon(true);
+
+	ipcRenderer.on("refreshMenu", (_, showMenu) => {
+		if (showMenu === undefined && !visible) return;
+		if (showMenu === false) {
+			bar.updateMenu(null);
+			visible = false;
+		} else {
+			bar.refreshMenu();
+			visible = true;
+		}
 	});
+
+	ipcRenderer.on("hideIcon", (_, hide) => hideIcon(hide));
 
 	// Increases the right margin of Navbar background when the scrollbar is visible to avoid blocking it (z-index doesn't affect it)
 	document.addEventListener('apiLoaded', () => {

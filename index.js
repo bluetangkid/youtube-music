@@ -28,6 +28,22 @@ unhandled({
 process.env.NODE_OPTIONS = "";
 
 const app = electron.app;
+// Prevent window being garbage collected
+let mainWindow;
+autoUpdater.autoDownload = false;
+
+if(config.get("options.singleInstanceLock")){
+	const gotTheLock = app.requestSingleInstanceLock();
+	if (!gotTheLock) app.quit();
+
+	app.on('second-instance', () => {
+		if (!mainWindow) return;
+		if (mainWindow.isMinimized()) mainWindow.restore();
+		if (!mainWindow.isVisible()) mainWindow.show();
+		mainWindow.focus();
+	});
+}
+
 app.commandLine.appendSwitch(
 	"js-flags",
 	// WebAssembly flags
@@ -43,6 +59,11 @@ if (config.get("options.disableHardwareAcceleration")) {
 	app.disableHardwareAcceleration();
 }
 
+if (is.linux() && config.plugins.isEnabled("shortcuts")) {
+	//stops chromium from launching it's own mpris service
+	app.commandLine.appendSwitch('disable-features', 'MediaSessionService');
+}
+
 if (config.get("options.proxy")) {
 	app.commandLine.appendSwitch("proxy-server", config.get("options.proxy"));
 }
@@ -51,10 +72,6 @@ if (config.get("options.proxy")) {
 require("electron-debug")({
 	showDevTools: false //disable automatic devTools on new window
 });
-
-// Prevent window being garbage collected
-let mainWindow;
-autoUpdater.autoDownload = false;
 
 let icon = "assets/youtube-music.png";
 if (process.platform == "win32") {
@@ -128,12 +145,34 @@ function createMainWindow() {
 	win.setBlur(false);
 
 	remote.enable(win.webContents);
+
 	if (windowPosition) {
 		const { x, y } = windowPosition;
-		win.setPosition(x, y);
+		const winSize = win.getSize();
+		const displaySize =
+			electron.screen.getDisplayNearestPoint(windowPosition).bounds;
+		if (
+			x + winSize[0] < displaySize.x - 8 ||
+			x - winSize[0] > displaySize.x + displaySize.width ||
+			y < displaySize.y - 8 ||
+			y > displaySize.y + displaySize.height
+		) {
+			//Window is offscreen
+			if (is.dev()) {
+				console.log(
+					`Window tried to render offscreen, windowSize=${winSize}, displaySize=${displaySize}, position=${windowPosition}`
+				);
+			}
+		} else {
+			win.setPosition(x, y);
+		}
 	}
 	if (windowMaximized) {
 		win.maximize();
+	}
+
+	if(config.get("options.alwaysOnTop")){
+		win.setAlwaysOnTop(true);
 	}
 
 	const urlToLoad = config.get("options.resumeOnStart")
@@ -143,21 +182,46 @@ function createMainWindow() {
 	win.on("closed", onClosed);
 
 	win.on("move", () => {
+		if (win.isMaximized()) return;
 		let position = win.getPosition();
-		config.set("window-position", { x: position[0], y: position[1] });
+		const isPiPEnabled =
+			config.plugins.isEnabled("picture-in-picture") &&
+			config.plugins.getOptions("picture-in-picture")["isInPiP"];
+		if (!isPiPEnabled) {
+			lateSave("window-position", { x: position[0], y: position[1] });
+		}
 	});
+
+	let winWasMaximized;
 
 	win.on("resize", () => {
 		const windowSize = win.getSize();
 
-		config.set("window-maximized", win.isMaximized());
-		if (!win.isMaximized()) {
-			config.set("window-size", {
+		const isMaximized = win.isMaximized();
+		if (winWasMaximized !== isMaximized) {
+			winWasMaximized = isMaximized;
+			config.set("window-maximized", isMaximized);
+		}
+		const isPiPEnabled =
+			config.plugins.isEnabled("picture-in-picture") &&
+			config.plugins.getOptions("picture-in-picture")["isInPiP"];
+		if (!isMaximized && !isPiPEnabled) {
+			lateSave("window-size", {
 				width: windowSize[0],
 				height: windowSize[1],
 			});
 		}
 	});
+
+	let savedTimeouts = {};
+	function lateSave(key, value) {
+		if (savedTimeouts[key]) clearTimeout(savedTimeouts[key]);
+
+		savedTimeouts[key] = setTimeout(() => {
+			config.set(key, value);
+			savedTimeouts[key] = undefined;
+		}, 1000)
+	}
 
 	win.webContents.on("render-process-gone", (event, webContents, details) => {
 		showUnresponsiveDialog(win, details);
@@ -175,30 +239,31 @@ function createMainWindow() {
 }
 
 app.once("browser-window-created", (event, win) => {
-	// User agents are from https://developers.whatismybrowser.com/useragents/explore/
-	const originalUserAgent = win.webContents.userAgent;
-	const userAgents = {
-		mac: "Mozilla/5.0 (Macintosh; Intel Mac OS X 12.1; rv:95.0) Gecko/20100101 Firefox/95.0",
-		windows: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:95.0) Gecko/20100101 Firefox/95.0",
-		linux: "Mozilla/5.0 (Linux x86_64; rv:95.0) Gecko/20100101 Firefox/95.0",
-	}
-
-	const updatedUserAgent = 
-		is.macOS() ? userAgents.mac :
-		is.windows() ? userAgents.windows :
-		userAgents.linux;
-
-	win.webContents.userAgent = updatedUserAgent;
-	app.userAgentFallback = updatedUserAgent;
-
-	win.webContents.session.webRequest.onBeforeSendHeaders((details, cb) => {
-		// this will only happen if login failed, and "retry" was pressed
-		if (win.webContents.getURL().startsWith("https://accounts.google.com") && details.url.startsWith("https://accounts.google.com")){
-			details.requestHeaders["User-Agent"] = originalUserAgent;
+	if (config.get("options.overrideUserAgent")) {
+		// User agents are from https://developers.whatismybrowser.com/useragents/explore/
+		const originalUserAgent = win.webContents.userAgent;
+		const userAgents = {
+			mac: "Mozilla/5.0 (Macintosh; Intel Mac OS X 12.1; rv:95.0) Gecko/20100101 Firefox/95.0",
+			windows: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:95.0) Gecko/20100101 Firefox/95.0",
+			linux: "Mozilla/5.0 (Linux x86_64; rv:95.0) Gecko/20100101 Firefox/95.0",
 		}
-		cb({ requestHeaders: details.requestHeaders });
-	});
 
+		const updatedUserAgent =
+			is.macOS() ? userAgents.mac :
+				is.windows() ? userAgents.windows :
+					userAgents.linux;
+
+		win.webContents.userAgent = updatedUserAgent;
+		app.userAgentFallback = updatedUserAgent;
+
+		win.webContents.session.webRequest.onBeforeSendHeaders((details, cb) => {
+			// this will only happen if login failed, and "retry" was pressed
+			if (win.webContents.getURL().startsWith("https://accounts.google.com") && details.url.startsWith("https://accounts.google.com")) {
+				details.requestHeaders["User-Agent"] = originalUserAgent;
+			}
+			cb({ requestHeaders: details.requestHeaders });
+		});
+	}
 
 	setupSongInfo(win);
 	loadPlugins(win);
@@ -308,12 +373,6 @@ app.on("ready", () => {
 	
 	mainWindow = createMainWindow();
 	setApplicationMenu(mainWindow);
-	if (config.get("options.restartOnConfigChanges")) {
-		config.watch(() => {
-			app.relaunch();
-			app.exit();
-		});
-	}
 	setUpTray(app, mainWindow);
 
 	// Autostart at login
