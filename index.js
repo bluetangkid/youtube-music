@@ -16,6 +16,8 @@ const { isTesting } = require("./utils/testing");
 const { setUpTray } = require("./tray");
 const { setupSongInfo } = require("./providers/song-info");
 
+const glasstron = require("glasstron");
+
 // Catch errors and log them
 unhandled({
 	logger: console.error,
@@ -32,6 +34,7 @@ app.commandLine.appendSwitch(
 	"--experimental-wasm-threads"
 );
 app.commandLine.appendSwitch("enable-features", "SharedArrayBuffer"); // Required for downloader
+app.commandLine.appendSwitch("enable-transparent-visuals");
 app.allowRendererProcessReuse = true; // https://github.com/electron/electron/issues/18397
 if (config.get("options.disableHardwareAcceleration")) {
 	if (is.dev()) {
@@ -91,7 +94,7 @@ function createMainWindow() {
 	const windowPosition = config.get("window-position");
 	const useInlineMenu = config.plugins.isEnabled("in-app-menu");
 
-	const win = new electron.BrowserWindow({
+	const win = new glasstron.BrowserWindow({
 		icon: icon,
 		width: windowSize.width,
 		height: windowSize.height,
@@ -121,6 +124,9 @@ function createMainWindow() {
 			: "default",
 		autoHideMenuBar: config.get("options.hideMenu"),
 	});
+	win.blurType = "transparent";
+	win.setBlur(false);
+
 	remote.enable(win.webContents);
 	if (windowPosition) {
 		const { x, y } = windowPosition;
@@ -299,7 +305,7 @@ app.on("ready", () => {
 			}
 		}
 	}
-
+	
 	mainWindow = createMainWindow();
 	setApplicationMenu(mainWindow);
 	if (config.get("options.restartOnConfigChanges")) {
