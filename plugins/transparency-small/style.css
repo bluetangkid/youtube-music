@@ -1,0 +1,50 @@
+:root{
+	background-color: #00000000 !important;
+	--ytmusic-background: #00000000 !important;
+	--ytmusic-nav-bar: #00000000 !important;
+	--ytmusic-player-bar-background: #00000040 !important;
+	--ytmusic-player-page-vertical-padding: 0px !important;
+	--ytmusic-nav-bar-tab-margin: 5px !important;
+	--ytmusic-search-box-height: 64px !important;
+}
+
+.center-content.ytmusic-nav-bar {
+	margin:none;
+	padding:none;
+	padding-left:64px !important;
+	padding-right:24px !important;
+	padding-top:0px !important;
+	padding-bottom:0px !important;
+}
+
+ytmusic-search-box {
+	--ytmusic-search-box-height: 64px !important;
+}
+
+ytmusic-pivot-bar-item-renderer[tab-id~="SPunlimited"]{
+	display:none !important;
+}
+
+ytmusic-pivot-bar-item-renderer[tab-id~="FEmusic_explore"]{
+	display:none !important;
+}
+
+ytmusic-app-layout {
+	height:64px !important;
+}
+
+.content.ytmusic-player-page{
+	padding: 0 !important;
+}
+
+.song-image{
+	display:none !important;
+}
+
+#left-content{
+	display:none !important;
+}
+
+body{
+	background-color: #00000000 !important;
+}
